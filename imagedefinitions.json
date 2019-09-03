@@ -1,6 +1,6 @@
 [   
   {   
     "name": "hello-world",   
-    "imageUri": "385809983358.dkr.ecr.us-east-1.amazonaws.com/hello-world:phtml"   
+    "imageUri": "026033341139.dkr.ecr.us-east-2.amazonaws.com/hello-world:phtml"   
   }   
 ]  
