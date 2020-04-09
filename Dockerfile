@@ -1,1 +1,3 @@
-FROM httpd:2.4
+FROM php:apache 
+COPY index.php /var/www/html 
+EXPOSE 80 
