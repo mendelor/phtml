@@ -1,35 +1,284 @@
-AWSTemplateFormatVersion: 2010-09-09
-Description: Simple S3 Bucket Configuration
+AWSTemplateFormatVersion: '2010-09-09'
+Description: AWS CloudFormation template to create a new VPC or use an existing VPC
+  for ECS deployment
+
+Parameters:
+  VPCCIDR:
+    Description: CIDR Block for VPC
+    Type: String
+    Default: 10.1.0.0/16
+    AllowedValues:
+      - 10.1.0.0/16
+  PublicSubnet1Param:
+    Description: Public Subnet 1
+    Type: String
+    Default: 10.1.11.0/24
+    AllowedValues:
+      - 10.1.11.0/24
+  PublicSubnet2Param:
+    Description: Public Subnet 2
+    Type: String
+    Default: 10.1.12.0/24
+    AllowedValues:
+      - 10.1.12.0/24
+
+
+  ECSAMI:
+    Description: AMI ID
+    Type: AWS::SSM::Parameter::Value<AWS::EC2::Image::Id>
+    Default: /aws/service/ecs/optimized-ami/amazon-linux/recommended/image_id
+
+  ECSInstanceType:
+    Description: AMI ID
+    Type: String
+    Default: t2.micro
+    AllowedValues:
+      - t2.micro
+      - t2.medium
+      - m1.small
+      - m1.large
+    Description: Enter t2.micro, m1.small, or m1.large. Default is t2.micro.
+
 Resources:
-  ExampleBucket:
-    Type: AWS::S3::Bucket
-    Properties:
-      VersioningConfiguration:
-          Status: Enabled
 
-
-  SampleBucketPolicy:
-    Type: AWS::S3::BucketPolicy
+  ECSCluster:
+    Type: AWS::ECS::Cluster
     Properties:
-      Bucket:
-        Ref: ExampleBucket
-      PolicyDocument:
+      ClusterName: ECSCluster
+
+  MyPrivateDnsNamespace:
+    Type: "AWS::ServiceDiscovery::PrivateDnsNamespace"
+    Properties:
+      Vpc: !Ref VPC
+      Name: MyPrivateDnsNamespace
+
+  VPC:
+    Type: 'AWS::EC2::VPC'
+    Properties:
+      CidrBlock: !Ref VPCCIDR
+      EnableDnsSupport: 'true'
+      EnableDnsHostnames: 'true'
+      Tags:
+        - Key: Name
+          Value: ECS VPC
+
+  InternetGateway:
+    Type: 'AWS::EC2::InternetGateway'
+    DependsOn: VPC
+  AttachGateway:
+    Type: 'AWS::EC2::VPCGatewayAttachment'
+    DependsOn:
+      - VPC
+      - InternetGateway
+    Properties:
+      VpcId: !Ref VPC
+      InternetGatewayId: !Ref InternetGateway
+
+  PublicSubnet1:
+    Type: 'AWS::EC2::Subnet'
+    DependsOn: AttachGateway
+    Properties:
+      VpcId: !Ref VPC
+      CidrBlock: !Ref PublicSubnet1Param
+      AvailabilityZone: !Select
+        - '0'
+        - !GetAZs ''
+      Tags:
+        - Key: Name
+          Value: Public Subnet 1
+
+  PublicSubnet2:
+    Type: 'AWS::EC2::Subnet'
+    DependsOn: AttachGateway
+    Properties:
+      VpcId: !Ref VPC
+      CidrBlock: !Ref PublicSubnet2Param
+      AvailabilityZone: !Select
+        - '1'
+        - !GetAZs ''
+      Tags:
+        - Key: Name
+          Value: Public Subnet 2
+
+  PublicRouteTable:
+    Type: 'AWS::EC2::RouteTable'
+    DependsOn:
+      - VPC
+      - AttachGateway
+    Properties:
+      VpcId: !Ref VPC
+      Tags:
+        - Key: Name
+          Value: Public
+
+  PublicRoute:
+    Type: 'AWS::EC2::Route'
+    DependsOn:
+      - PublicRouteTable
+      - AttachGateway
+    Properties:
+      RouteTableId: !Ref PublicRouteTable
+      DestinationCidrBlock: 0.0.0.0/0
+      GatewayId: !Ref InternetGateway
+
+  PublicSubnet1RouteTableAssociation:
+    Type: 'AWS::EC2::SubnetRouteTableAssociation'
+    DependsOn:
+      - PublicRouteTable
+      - PublicSubnet1
+      - AttachGateway
+    Properties:
+      SubnetId: !Ref PublicSubnet1
+      RouteTableId: !Ref PublicRouteTable
+
+  PublicSubnet2RouteTableAssociation:
+    Type: 'AWS::EC2::SubnetRouteTableAssociation'
+    DependsOn:
+      - PublicRouteTable
+      - PublicSubnet2
+    Properties:
+      SubnetId: !Ref PublicSubnet2
+      RouteTableId: !Ref PublicRouteTable
+
+  MySecurityGroup:
+    Type: 'AWS::EC2::SecurityGroup'
+    DependsOn: AttachGateway
+    Properties:
+      GroupDescription: MySecurityGroup
+      GroupName: MySecurityGroup
+      VpcId: !Ref VPC
+      Tags:
+        - Key: Name
+          Value: MySecurityGroup
+
+      SecurityGroupEgress:
+        - IpProtocol: tcp
+          FromPort: '0'
+          ToPort: '65535'
+          CidrIp: 0.0.0.0/0
+        - IpProtocol: udp
+          FromPort: '0'
+          ToPort: '65535'
+          CidrIp: 0.0.0.0/0
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: '80'
+          ToPort: '80'
+          CidrIp: 0.0.0.0/0
+
+  MyAutoScallingGroup:
+    DependsOn: EcsInstanceLaunchConfiguration
+    Type: AWS::AutoScaling::AutoScalingGroup
+    Properties:
+      AutoScalingGroupName: MyAutoScallingGroup
+      AvailabilityZones:
+      - Fn::Select:
+        - '0'
+        - Fn::GetAZs:
+            Ref: AWS::Region
+      - Fn::Select:
+        - '1'
+        - Fn::GetAZs:
+            Ref: AWS::Region
+      LaunchConfigurationName:
+        Ref: "EcsInstanceLaunchConfiguration"
+      MinSize: '1'
+      MaxSize: 1
+      DesiredCapacity: 1
+      VPCZoneIdentifier:
+        - !Ref PublicSubnet1
+        - !Ref PublicSubnet2
+
+  ECSEC2RoleInstanceProfile:
+    Type: AWS::IAM::InstanceProfile
+    Properties:
+      Path: "/"
+      Roles:
+      - !Ref ECSEC2Role
+
+  ECSEC2Role:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: ECSEC2Role
+      AssumeRolePolicyDocument:
         Statement:
-          -
+        - Effect: Allow
+          Principal:
+            Service:
+            - ec2.amazonaws.com
+          Action:
+          - sts:AssumeRole
+      Path: "/"
+      Policies:
+      - PolicyName: ecs-service
+        PolicyDocument:
+          Statement:
+          - Effect: Allow
             Action:
-              - "s3:GetObject"
-            Effect: "Allow"
-            Resource:
-              Fn::Join:
-                - ""
-                -
-                  - "arn:aws:s3:::"
-                  -
-                    Ref: ExampleBucket
-                  - "/*"
-            Principal: "*"
-            Condition:
-              StringLike:
-                aws:Referer:
-                  - "http://www.example.com/*"
-                  - "http://example.com/*"
+            - ecs:*
+            Resource: "*"
+
+  EcsInstanceLaunchConfiguration:
+    Type: AWS::AutoScaling::LaunchConfiguration
+    Metadata:
+      AWS::CloudFormation::Init:
+        configSets:
+          ConfigCluster:
+            - Install
+        Install:
+          files:
+            /home/ec2-user/.aws/config:
+              mode: '000755'
+              owner: ec2-user
+              group: root
+              content: !Sub |
+                [default]
+                region = ${AWS::Region}
+            /etc/ecs/ecs.config:
+              content: !Sub 'ECS_CLUSTER=${ECSCluster}'
+              mode: '000755'
+              owner: root
+              group: root
+    Properties:
+      ImageId: !Ref ECSAMI
+      LaunchConfigurationName: 'EcsInstanceLaunchConfiguration'
+      InstanceType: !Ref ECSInstanceType
+      AssociatePublicIpAddress: true
+      IamInstanceProfile: !Ref 'ECSEC2RoleInstanceProfile'
+      KeyName: ohiokeynew
+      SecurityGroups:
+        - !Ref 'MySecurityGroup'
+      UserData:
+        Fn::Base64:
+          !Sub |
+            #!/bin/bash -xe
+            yum update -y
+            yum install -y aws-cfn-bootstrap git aws-cli
+            # Install the files and packages from the metadata
+            /opt/aws/bin/cfn-init -v --stack ${AWS::StackName} --resource EcsInstanceLaunchConfiguration --configsets ConfigCluster --region ${AWS::Region}
+            # Signal the status from cfn-init
+            /opt/aws/bin/cfn-signal -e $? --stack ${AWS::StackName} --resource MyAutoScallingGroup --region ${AWS::Region}
+
+
+
+  TaskDefinition:
+    Type: 'AWS::ECS::TaskDefinition'
+    DependsOn:
+      - VPC
+    Properties:
+      ContainerDefinitions:
+        - Name: test
+          Cpu: '100'
+          Memory: "0.5GB"
+          Essential: 'true'
+          Image: !Join
+            - ''
+            - - !Ref 'AWS::AccountId'
+              - .dkr.ecr.us-east-2.amazonaws.com/
+              - hello-world
+              - ':'
+              - idontknow10
+          Memory: '300'
+          PortMappings:
+            - HostPort: 80
+              ContainerPort: 80
