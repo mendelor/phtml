@@ -1,0 +1,35 @@
+AWSTemplateFormatVersion: 2010-09-09
+Description: Simple S3 Bucket Configuration
+Resources:
+  ExampleBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      VersioningConfiguration:
+          Status: Enabled
+
+
+  SampleBucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      Bucket:
+        Ref: ExampleBucket
+      PolicyDocument:
+        Statement:
+          -
+            Action:
+              - "s3:GetObject"
+            Effect: "Allow"
+            Resource:
+              Fn::Join:
+                - ""
+                -
+                  - "arn:aws:s3:::"
+                  -
+                    Ref: ExampleBucket
+                  - "/*"
+            Principal: "*"
+            Condition:
+              StringLike:
+                aws:Referer:
+                  - "http://www.example.com/*"
+                  - "http://example.com/*"
