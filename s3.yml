@@ -277,7 +277,7 @@ Resources:
               - .dkr.ecr.us-east-2.amazonaws.com/
               - hello-world
               - ':'
-              - 133
+              - 134
           Memory: '300'
           PortMappings:
             - HostPort: 80
