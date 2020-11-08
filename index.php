@@ -1,2 +1,13 @@
-<?php 
-  echo 'Hello World, I hope it will work now what ?'; 
+<!DOCTYPE html>
+<html>
+<style>
+body { background-color:blue}
+</style>
+<body>
+
+<?php
+ECHO "";
+?>
+
+</body>
+</html>
