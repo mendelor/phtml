@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html>
 <style>
-body { background-color:blue}
+body { background-color:green}
 </style>
 <body>
 
