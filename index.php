@@ -6,7 +6,7 @@ body { background-color:green}
 <body>
 
 <?php
-ECHO "";
+ECHO "hello";
 ?>
 
 </body>
