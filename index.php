@@ -1,12 +1,12 @@
 <!DOCTYPE html>
 <html>
 <style>
-body { background-color:green}
+body { background-color:blue}
 </style>
 <body>
 
 <?php
-ECHO "hello";
+ECHO "hello,hello";
 ?>
 
 </body>
